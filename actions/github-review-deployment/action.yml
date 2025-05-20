@@ -1,0 +1,153 @@
+name: 'GitHub Review App Deployment Status'
+description: 'Creates and updates GitHub deployment status for review apps and adds PR comments'
+inputs:
+  github-token:
+    description: 'GitHub token with deployments permission'
+    required: true
+  pr-number:
+    description: 'Pull request number'
+    required: true
+  branch-name:
+    description: 'Branch name'
+    required: true
+  review-app-url:
+    description: 'URL of the review app'
+    required: true
+  status:
+    description: 'Deployment status (success or failure)'
+    required: false
+    default: 'success'
+outputs:
+  deployment-id:
+    description: 'ID of the created deployment'
+    value: ${{ steps.create-deployment.outputs.deployment_id }}
+  environment:
+    description: 'Environment name used for the deployment'
+    value: ${{ steps.create-deployment.outputs.environment }}
+runs:
+  using: "composite"
+  steps:
+    - name: Create GitHub Deployment
+      id: create-deployment
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const reviewAppUrl = '${{ inputs.review-app-url }}';
+          const environment = `pr-${{ inputs.pr-number }}`;
+          
+          // Create a deployment
+          const { data: deployment } = await github.rest.repos.createDeployment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: '${{ inputs.branch-name }}',
+            environment: environment,
+            auto_merge: false,
+            required_contexts: [],
+            description: 'Review App Deployment'
+          });
+          
+          // Set deployment status to in progress
+          await github.rest.repos.createDeploymentStatus({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            deployment_id: deployment.id,
+            state: 'in_progress',
+            description: 'Deploying to review environment...',
+            environment: environment,
+            log_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+          });
+          
+          // Store deployment ID in the outputs
+          core.setOutput('deployment_id', deployment.id);
+          core.setOutput('environment', environment);
+          
+          // Export to environment so that steps in the same job can access it
+          core.exportVariable('DEPLOYMENT_ID', deployment.id);
+          core.exportVariable('DEPLOYMENT_ENV', environment);
+          
+          return { id: deployment.id, environment: environment };
+
+    - name: Update deployment status
+      if: inputs.status == 'success' || inputs.status == 'failure'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const reviewAppUrl = '${{ inputs.review-app-url }}';
+          const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+          const timestamp = new Date().toLocaleString();
+          const deploymentId = '${{ steps.create-deployment.outputs.deployment_id }}';
+          const environment = '${{ steps.create-deployment.outputs.environment }}';
+          const status = '${{ inputs.status }}';
+          
+          // Update deployment status
+          await github.rest.repos.createDeploymentStatus({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            deployment_id: deploymentId,
+            state: status,
+            environment: environment,
+            environment_url: status === 'success' ? reviewAppUrl : undefined,
+            description: status === 'success' ? 'Deployment successful!' : 'Deployment failed',
+            auto_inactive: false,
+            log_url: runUrl
+          });
+          
+          // Create message based on status
+          let message;
+          if (status === 'success') {
+            message = [
+              '## Review App Deployment',
+              '',
+              '✅ Deployment successful',
+              '',
+              `🔗 **Review App URL**: [${reviewAppUrl}](${reviewAppUrl})`,
+              '',
+              `🕒 **Last deployed**: ${timestamp}`,
+              '',
+              `🚀 [View deployment workflow](${runUrl})`,
+              '',
+              '_This environment will be automatically cleaned up when the PR is closed._'
+            ].join('\n');
+          } else {
+            message = [
+              '## Review App Deployment',
+              '',
+              '❌ Deployment failed',
+              '',
+              `🚀 [View error logs](${runUrl})`,
+              '',
+              '_Check the deployment logs for more information._'
+            ].join('\n');
+          }
+          
+          // Find or create a comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: ${{ inputs.pr-number }},
+          });
+          
+          // Find comment by looking for the header
+          const botComment = comments.find(comment => 
+            comment.body.includes('## Review App Deployment')
+          );
+          
+          if (botComment) {
+            // Update existing comment
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: message
+            });
+          } else {
+            // Create new comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ inputs.pr-number }},
+              body: message
+            });
+          }

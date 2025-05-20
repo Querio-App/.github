@@ -1,0 +1,78 @@
+name: 'Deploy Production with Kamal'
+description: 'Deploys an application to production using Kamal'
+inputs:
+  config-file:
+    description: 'Path to Kamal configuration file'
+    required: false
+    default: 'config/deploy/production.yml'
+  production-url:
+    description: 'Production URL for deployment status'
+    required: true
+  ssh-key:
+    description: 'SSH private key for deployment server'
+    required: true
+  docker-username:
+    description: 'Docker registry username'
+    required: true
+  docker-password:
+    description: 'Docker registry password'
+    required: true
+  encryption-key:
+    description: 'Encryption key for Kamal secrets'
+    required: true
+  aws-access-key-id:
+    description: 'AWS Access Key ID'
+    required: true
+  aws-secret-access-key:
+    description: 'AWS Secret Access Key'
+    required: true
+  aws-region:
+    description: 'AWS Region'
+    required: true
+  additional-env-vars:
+    description: 'Additional environment variables in JSON format'
+    required: false
+    default: '{}'
+  version:
+    description: 'Version tag to deploy (optional)'
+    required: false
+    default: ''
+outputs:
+  deployment-id:
+    description: 'ID of the GitHub deployment that was created'
+    value: ${{ steps.deployment.outputs.deploymentId }}
+runs:
+  using: "composite"
+  steps:
+    - name: Setup SSH key
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ inputs.ssh-key }}
+
+
+    - name: Deploy with Kamal
+      shell: bash
+      run: |
+        DEPLOY_CMD="kamal deploy --config-file=${{ inputs.config-file }} --verbose"
+        
+        # Add version if provided
+        if [ -n "${{ inputs.version }}" ]; then
+          DEPLOY_CMD="$DEPLOY_CMD --version=${{ inputs.version }}"
+        fi
+        
+        $DEPLOY_CMD
+      env:
+        KAMAL_REGISTRY_PASSWORD: ${{ inputs.docker-password }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.aws-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.aws-secret-access-key }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        AWS_DEFAULT_REGION: ${{ inputs.aws-region }}
+
+    - name: Create GitHub Deployment
+      id: deployment
+      shell: bash
+      run: |
+        # This step requires a GitHub Action that supports creating deployments
+        # For now we'll create a placeholder that an actual workflow can use
+        echo "deploymentId=dummy-production-deployment-id" >> $GITHUB_OUTPUT
+        echo "environment=production" >> $GITHUB_OUTPUT

@@ -1,0 +1,77 @@
+name: 'Cleanup Review App with Kamal'
+description: 'Removes a review app when PR is closed'
+inputs:
+  config-file:
+    description: 'Path to Kamal configuration file'
+    required: false
+    default: 'config/deploy/review.yml.erb'
+  ssh-key:
+    description: 'SSH private key for deployment server'
+    required: true
+  docker-username:
+    description: 'Docker registry username'
+    required: true
+  docker-password:
+    description: 'Docker registry password'
+    required: true
+  encryption-key:
+    description: 'Encryption key for Kamal secrets'
+    required: true
+  aws-access-key-id:
+    description: 'AWS Access Key ID'
+    required: true
+  aws-secret-access-key:
+    description: 'AWS Secret Access Key'
+    required: true
+  aws-region:
+    description: 'AWS Region'
+    required: true
+  pr-number:
+    description: 'PR number'
+    required: true
+  branch-name:
+    description: 'Branch name'
+    required: true
+outputs:
+  review-app-name:
+    description: 'Name of the review app that was cleaned up'
+    value: ${{ steps.generate-name.outputs.reviewAppName }}
+runs:
+  using: "composite"
+  steps:
+    - name: Generate review app name
+      id: generate-name
+      shell: bash
+      run: |
+        # Create a unique app name based on PR number only
+        PR_NUMBER=${{ inputs.pr-number }}
+        REVIEW_APP_NAME="pr-${PR_NUMBER}"
+        REVIEW_APP_TAG="pr-${PR_NUMBER}"
+        
+        echo "reviewAppName=$REVIEW_APP_NAME" >> $GITHUB_OUTPUT
+        echo "reviewAppTag=$REVIEW_APP_TAG" >> $GITHUB_OUTPUT
+        
+        # Export to environment for Kamal
+        echo "REVIEW_APP_NAME=$REVIEW_APP_NAME" >> $GITHUB_ENV
+        echo "REVIEW_APP_TAG=$REVIEW_APP_TAG" >> $GITHUB_ENV
+
+    - name: Setup SSH key
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ inputs.ssh-key }}
+
+
+    - name: Remove review app with Kamal
+      shell: bash
+      run: |
+        kamal remove \
+          --config-file=${{ inputs.config-file }} \
+          --verbose
+      env:
+        REVIEW_APP_NAME: ${{ env.REVIEW_APP_NAME }}
+        REVIEW_APP_TAG: ${{ env.REVIEW_APP_TAG }}
+        KAMAL_REGISTRY_PASSWORD: ${{ inputs.docker-password }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.aws-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.aws-secret-access-key }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        AWS_DEFAULT_REGION: ${{ inputs.aws-region }}

@@ -1,0 +1,28 @@
+name: 'Setup Kamal'
+description: 'Sets up Ruby and installs Kamal'
+inputs:
+  ruby-version:
+    description: 'Ruby version to use'
+    required: false
+    default: '3.2'
+outputs:
+  kamal-version:
+    description: 'The version of Kamal that was installed'
+    value: ${{ steps.kamal-version.outputs.version }}
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+        bundler-cache: true
+
+    - name: Install Kamal
+      shell: bash
+      run: gem install kamal
+      
+    - name: Get Kamal version
+      id: kamal-version
+      shell: bash
+      run: echo "version=$(kamal version)" >> $GITHUB_OUTPUT

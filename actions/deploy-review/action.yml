@@ -1,0 +1,102 @@
+name: 'Deploy Review App with Kamal'
+description: 'Deploys a review app for pull requests using Kamal'
+inputs:
+  config-file:
+    description: 'Path to Kamal configuration file'
+    required: false
+    default: 'config/deploy/review.yml.erb'
+  review-domain:
+    description: 'Domain for review apps (without PR prefix)'
+    required: true
+  ssh-key:
+    description: 'SSH private key for deployment server'
+    required: true
+  docker-username:
+    description: 'Docker registry username'
+    required: true
+  docker-password:
+    description: 'Docker registry password'
+    required: true
+  encryption-key:
+    description: 'Encryption key for Kamal secrets'
+    required: true
+  aws-access-key-id:
+    description: 'AWS Access Key ID'
+    required: true
+  aws-secret-access-key:
+    description: 'AWS Secret Access Key'
+    required: true
+  aws-region:
+    description: 'AWS Region'
+    required: true
+  pr-number:
+    description: 'PR number'
+    required: true
+  branch-name:
+    description: 'Branch name'
+    required: true
+  additional-env-vars:
+    description: 'Additional environment variables in JSON format'
+    required: false
+    default: '{}'
+outputs:
+  review-app-name:
+    description: 'Name of the review app'
+    value: ${{ steps.generate-name.outputs.reviewAppName }}
+  review-app-url:
+    description: 'URL of the deployed review app'
+    value: ${{ steps.generate-name.outputs.reviewAppUrl }}
+  deployment-id:
+    description: 'ID of the GitHub deployment that was created'
+    value: ${{ steps.deployment.outputs.deploymentId }}
+runs:
+  using: "composite"
+  steps:
+    - name: Generate review app name
+      id: generate-name
+      shell: bash
+      run: |
+        # Create a unique app name based on PR number only
+        PR_NUMBER=${{ inputs.pr-number }}
+        REVIEW_APP_NAME="pr-${PR_NUMBER}"
+        REVIEW_APP_TAG="pr-${PR_NUMBER}"
+        REVIEW_APP_URL="https://${REVIEW_APP_NAME}.${{ inputs.review-domain }}"
+        
+        echo "reviewAppName=$REVIEW_APP_NAME" >> $GITHUB_OUTPUT
+        echo "reviewAppTag=$REVIEW_APP_TAG" >> $GITHUB_OUTPUT
+        echo "reviewAppUrl=$REVIEW_APP_URL" >> $GITHUB_OUTPUT
+        
+        # Export to environment for Kamal
+        echo "REVIEW_APP_NAME=$REVIEW_APP_NAME" >> $GITHUB_ENV
+        echo "REVIEW_APP_TAG=$REVIEW_APP_TAG" >> $GITHUB_ENV
+
+    - name: Setup SSH key
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ inputs.ssh-key }}
+
+
+    - name: Deploy review app with Kamal
+      shell: bash
+      run: |
+        kamal deploy \
+          --config-file=${{ inputs.config-file }} \
+          --verbose
+      env:
+        REVIEW_APP_NAME: ${{ env.REVIEW_APP_NAME }}
+        REVIEW_APP_TAG: ${{ env.REVIEW_APP_TAG }}
+        KAMAL_REGISTRY_PASSWORD: ${{ inputs.docker-password }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.aws-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.aws-secret-access-key }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        AWS_DEFAULT_REGION: ${{ inputs.aws-region }}
+
+
+    - name: Create GitHub Deployment
+      id: deployment
+      shell: bash
+      run: |
+        # This step requires a GitHub Action that supports creating deployments
+        # For now we'll create a placeholder that an actual workflow can use
+        echo "deploymentId=dummy-review-deployment-id" >> $GITHUB_OUTPUT
+        echo "environment=pr-${{ inputs.pr-number }}" >> $GITHUB_OUTPUT
